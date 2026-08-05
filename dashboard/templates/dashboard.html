@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quality Inspection Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.0/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a237e, #3949ab);
+            color: white;
+            padding: 20px 40px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 5px; }
+        .header p { opacity: 0.9; }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 30px 20px;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .metric-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s;
+        }
+        .metric-card:hover { transform: translateY(-3px); }
+        .metric-label {
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .metric-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1a237e;
+        }
+        .metric-sub {
+            font-size: 14px;
+            color: #888;
+            margin-top: 5px;
+        }
+        .status-active { color: #4caf50; }
+        .status-idle { color: #2196f3; }
+        .status-fault { color: #f44336; }
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .chart-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .chart-card h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .defect-log {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .defect-log h3 {
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background: #f5f5f5;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            color: #666;
+        }
+        td { font-size: 14px; }
+        .badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-reject { background: #ffebee; color: #c62828; }
+        .badge-accept { background: #e8f5e9; color: #2e7d32; }
+        @media (max-width: 900px) {
+            .charts-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Quality Inspection Dashboard</h1>
+        <p>Real-time Manufacturing Defect Detection & Analytics</p>
+    </div>
+
+    <div class="container">
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Total Inspected</div>
+                <div class="metric-value" id="total">0</div>
+                <div class="metric-sub">articles since shift start</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Defective Products</div>
+                <div class="metric-value" id="rejected" style="color: #c62828;">0</div>
+                <div class="metric-sub" id="reject-rate">0% rejection rate</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Detection Accuracy</div>
+                <div class="metric-value" id="accuracy">96%</div>
+                <div class="metric-sub">classifier confidence</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Avg Inspection Time</div>
+                <div class="metric-value" id="avg-time">36</div>
+                <div class="metric-sub">milliseconds per article</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">System Status</div>
+                <div class="metric-value" id="status" style="font-size: 24px;">
+                    <span class="status-active">● ACTIVE</span>
+                </div>
+                <div class="metric-sub" id="throughput">0 articles/min</div>
+            </div>
+        </div>
+
+        <div class="charts-row">
+            <div class="chart-card">
+                <h3>Hourly Production</h3>
+                <canvas id="hourlyChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h3>Yield Trend</h3>
+                <canvas id="yieldChart"></canvas>
+            </div>
+        </div>
+
+        <div class="defect-log">
+            <h3>Recent Defect Log</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Defect Class</th>
+                        <th>Confidence</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="log-body">
+                    <tr><td colspan="4" style="text-align:center;color:#999;">Waiting for data...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let hourlyData = new Array(24).fill(0);
+        let yieldHistory = [];
+
+        // Initialize charts
+        const hourlyCtx = document.getElementById('hourlyChart').getContext('2d');
+        const hourlyChart = new Chart(hourlyCtx, {
+            type: 'bar',
+            data: {
+                labels: Array.from({length: 24}, (_, i) => `${i}:00`),
+                datasets: [{
+                    label: 'Articles Inspected',
+                    data: hourlyData,
+                    backgroundColor: '#3949ab',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { beginAtZero: true } }
+            }
+        });
+
+        const yieldCtx = document.getElementById('yieldChart').getContext('2d');
+        const yieldChart = new Chart(yieldCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Yield Rate (%)',
+                    data: [],
+                    borderColor: '#4caf50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { min: 80, max: 100 } }
+            }
+        });
+
+        socket.on('update', (data) => {
+            document.getElementById('total').textContent = data.total;
+            document.getElementById('rejected').textContent = data.rejected;
+            document.getElementById('reject-rate').textContent = 
+                data.total > 0 ? ((data.rejected / data.total) * 100).toFixed(1) + '% rejection rate' : '0% rejection rate';
+            document.getElementById('accuracy').textContent = (data.accuracy * 100).toFixed(1) + '%';
+            document.getElementById('avg-time').textContent = data.avg_time_ms.toFixed(0);
+            document.getElementById('throughput').textContent = data.throughput_per_min.toFixed(1) + ' articles/min';
+
+            const statusEl = document.getElementById('status');
+            if (data.status === 'ACTIVE') {
+                statusEl.innerHTML = '<span class="status-active">● ACTIVE</span>';
+            } else if (data.status === 'IDLE') {
+                statusEl.innerHTML = '<span class="status-idle">● IDLE</span>';
+            } else {
+                statusEl.innerHTML = '<span class="status-fault">● FAULT</span>';
+            }
+
+            // Update hourly chart
+            if (data.hourly_counts) {
+                hourlyChart.data.datasets[0].data = data.hourly_counts;
+                hourlyChart.update();
+            }
+
+            // Update yield chart
+            if (data.total > 0) {
+                const yield_rate = ((data.total - data.rejected) / data.total) * 100;
+                yieldHistory.push(yield_rate);
+                if (yieldHistory.length > 20) yieldHistory.shift();
+                yieldChart.data.labels = yieldHistory.map((_, i) => i + 1);
+                yieldChart.data.datasets[0].data = yieldHistory;
+                yieldChart.update();
+            }
+
+            // Update defect log
+            const tbody = document.getElementById('log-body');
+            if (data.defect_log && data.defect_log.length > 0) {
+                tbody.innerHTML = data.defect_log.slice(-10).reverse().map(entry => `
+                    <tr>
+                        <td>${entry.timestamp}</td>
+                        <td>${entry.class}</td>
+                        <td>${(entry.confidence * 100).toFixed(1)}%</td>
+                        <td><span class="badge badge-reject">REJECTED</span></td>
+                    </tr>
+                `).join('');
+            }
+        });
+    </script>
+</body>
+</html>

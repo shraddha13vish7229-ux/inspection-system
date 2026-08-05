@@ -1,0 +1,43 @@
+# Build artifacts
+*.trt
+*.onnx
+*.pth
+*.h5
+__pycache__/
+*.pyc
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Datasets (large files)
+data/raw/
+data/processed/
+*.zip
+*.tar.gz
+
+# Logs
+logs/
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Node modules (if any)
+node_modules/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model checkpoints (keep best only)
+checkpoints/
+!models/best_model.pth
